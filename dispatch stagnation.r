@@ -3,6 +3,7 @@
 library(readr)
 library(dplyr)
 library(lubridate)
+library(viridis)
 
 #Environmental Variables
 Sys.setenv(TZ = "America/Chicago")
@@ -63,19 +64,24 @@ write.csv(dia_removed, file_path)
 ```{r}
 #build "parts with top 10 wait times" bargraphs
 #must be made numeric, diffdate not accepted in vectors:
-top10_waits_values %>%
-    as.numeric(dia_removed$avg_wait[1:10])
-    rev(top10_waits_values)
+top10_waits_values <- as.numeric(dia_removed$avg_wait[1:10])
+top10_waits_values <- rev(top10_waits_values)
 top10_waits_names <- rev(dia_removed$Assembly[1:10])
 top10_waits <- setNames(top10_waits_values, top10_waits_names)
 
 #create and save bar graph
 png(filename = "parts top10waittimes.png", width = 650, height = 580)
-par(mar = c(5, 8, 4, 1) + 1) #margins
+par(mar = c(5, 9, 4, 1) + 1) #margins
 
 #increase x-axis to include largest value
 x_max1 <- ceiling(max(top10_waits_values) * 1.10)
-barplot(top10_waits, main = "Parts with Top 10 Wait Times", xlab = "# of Days", las = 2, horiz = TRUE, xlim = c(0, x_max1)) # nolint
+barplot(top10_waits,
+        xlab = "# of Days",
+        las = 2,
+        horiz = TRUE,
+        xlim = c(0, x_max1),
+        col = viridis(10)) # nolint
+title("Parts with Top 10 Wait Times")
 dev.off()
 ```
 
@@ -94,7 +100,14 @@ par(mar = c(5, 9, 4, 1) + 1) #margins
 
 #increase x-axis to include largest value
 x_max2 <- ceiling(max(top10_qty_values) * 1.10)
-
-barplot(top10_qty, main = "Top 10 Largest Quantities by Part Number", xlab = "# of Parts", las = 2, horiz = TRUE, xlim = c(0, x_max2)) # nolint
+barplot(top10_qty,
+        xlab = "# of Parts",
+        las = 2,
+        horiz = TRUE,
+        xlim = c(0, x_max2),
+        col = viridis(10)) # nolint
+title("Top 10 Largest Quantities by Part Number",
+        cex = 3)
 dev.off()
 ```
+
