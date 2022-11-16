@@ -3,7 +3,6 @@
 library(readr)
 library(dplyr)
 library(lubridate)
-library(viridis)
 library(stringr)
 library(ggplot2)
 
@@ -108,7 +107,7 @@ viz_10qty <- ggplot(data = df10qty,
     scale_y_continuous(expand = expansion(mult = c(0, .1)))
 ggsave(paste0(format(Sys.Date(), "%b%d%y"), " top 10 qty.png"))
 
-#Top 10 Largest Quantities
+#Job Quantities by Operation
 viz_wc <- ggplot(data = grouped_by_wc,
     aes(x = reorder(Operation_Description, -sum_group), y = sum_group,
                     label = sum_group)) +
