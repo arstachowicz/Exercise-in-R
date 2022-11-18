@@ -8,9 +8,7 @@ library(ggplot2)
 ```
 ```{r message=FALSE}
 #load raw csv file
-raw_weldment_list <- read_csv("C:\\Users\\astachowicz\\Documents\\GitHub\\Dispatch List\\Weldment List.csv", # nolint
-    col_names = FALSE)
-dispatch_list_raw <- read_csv("C:\\Users\\astachowicz\\Downloads\\XXICHOR_DISCRETE_JOB_DISPATCH_RPT_XXICHOR_DISCRETE_JOB_DISPATCH_TMPL.csv") # nolint
+raw_weldment_list <- read_csv("C:\\Users\\astachowicz\\Documents\\Weldment Tracker\\R Coded\\Weldment Library\\weld number list.csv") # nolint
 ```
 ```{r}
 #clean up data
@@ -46,12 +44,10 @@ if (df1 == df2) {
 #remove spaces and hash in header
 colnames(raw_job_list) = gsub(" ", "_", colnames(raw_job_list))
 colnames(raw_job_list) = gsub("#", "", colnames(raw_job_list))
-colnames(dispatch_list_raw) = gsub(" ", "_", colnames(dispatch_list_raw))
-colnames(dispatch_list_raw) = gsub("#", "", colnames(dispatch_list_raw))
 
 ```{r}
 #Filtered to Weldments
-job_list_col <- raw_job_list %>%
+forecast_weld <- raw_job_list %>%
     select(Item_Name, Using_Assembly, Schedule_Ship_Date,
             Order_Type, Standard_Cost, Order_Quantity) %>%
     #convert currency to double to use sum(), convert date
@@ -60,43 +56,79 @@ job_list_col <- raw_job_list %>%
     mutate(Order_Quantity = abs(Order_Quantity)) %>%
     #sort through two columns and only keep rows that match weldment vector
     filter(Item_Name %in% adj_weldments) %>% # nolint
-    distinct()
-
-#Filtered to Weldments, Dispatch
-dispatch_weld <- dispatch_list_raw %>%
-    select(Assembly, Work_Center, Quantity_In_Queue, Job_Number,
-        Quantity_Remaining, Job_Completion_Date) %>%
-    #convert currency to double to use sum(), convert date
-    mutate(Job_Completion_Date = mdy(Job_Completion_Date)) %>%
-    #sort through two columns and only keep rows that match weldment vector
-    filter((Assembly %in% adj_weldments) & (Work_Center == "Cleanroom")) %>%
     distinct() %>%
-    select(-Work_Center)
-#different quantity values???
-quantity_df <- dispatch_weld %>%
-    filter(Quantity_Remaining != Quantity_In_Queue)
-nrow(quantity_df)
+    filter(Order_Type == "Forecast" | Order_Type == "Sales order") %>%
+    select(-Order_Type)
 ```
 ```{r}
-#line plot of anticipated demand
-job_list_filt <- job_list_col %>%
-    filter(Order_Type == "Forecast")
-#use 'aggregate' to group by date and summarize
-job_list_filt <- aggregate(job_list_col["Order_Quantity"],
-    by = job_list_col["Schedule_Ship_Date"], sum)
-dispatch_date <- aggregate(dispatch_weld["Quantity_In_Queue"],
-    by = dispatch_weld["Job_Completion_Date"], sum)
+#Pull old jobs
+job_list_raw <- read_csv("C:\\Users\\astachowicz\\Documents\\Weldment Tracker\\R Coded\\transactions resaved.csv") # nolint
+wo_sau_raw <- read_csv("C:\\Users\\astachowicz\\Documents\\Weldment Tracker\\R Coded\\Weldment Library\\wo-sau number qty.csv") # nolint
 
-viz_dispatch_released <- ggplot() +
-    geom_point(data = job_list_filt, aes(x = Schedule_Ship_Date,
-        y = Order_Quantity), color = "green") +
-    geom_point(data = dispatch_date, aes(x = Job_Completion_Date,
-        y = Quantity_In_Queue), color = "red") +
+colnames(job_list_raw) = gsub(" ", "_", colnames(job_list_raw))
+colnames(job_list_raw) = gsub("#", "", colnames(job_list_raw))
+colnames(wo_sau_raw) = gsub(" ", "_", colnames(wo_sau_raw))
+colnames(wo_sau_raw) = gsub("#", "", colnames(wo_sau_raw))
+
+#LEFT JOIN on work order # to get job quantity
+job_list_merg <- merge(job_list_raw, wo_sau_raw,
+    by.x = "Work_Order",
+    by.y = "Job")
+
+#eliminate returns
+colnames(job_list_merg) = gsub("\n", "_", colnames(job_list_merg))
+
+#completed weldments
+job_list_qty <- job_list_merg %>%
+    select(Completion_Date, Work_Order, Item,
+        Quantity_Completed, Quantity_Start,
+        Job_Status, Component_or_Resource) %>%
+    mutate(Completion_Date = mdy(Completion_Date)) %>%
+    filter(Item %in% adj_weldments) %>%
+    filter(str_starts(Component_or_Resource, "W/C 80 Cleanline")) %>%
+    distinct()
+```
+```{r}
+#moving averages, grouped by month for line graphs
+forecast_weld_avg <- forecast_weld %>%
+    mutate(fore_year = year(Schedule_Ship_Date),
+        fore_month = month(Schedule_Ship_Date)) %>%
+    group_by(fore_month, fore_year) %>%
+    summarise(qty_result = sum(Order_Quantity, na.rm = TRUE), .groups = "keep") %>% # nolint
+    mutate(comb_date = mdy(paste0(fore_month, "/01/", fore_year))) %>%
+    mutate(data_source = "Forecast")
+completed_weld_avg <- job_list_qty %>%
+    mutate(fore_year = year(Completion_Date),
+        fore_month = month(Completion_Date),
+        fore_week = week(Completion_Date)) %>%
+    group_by(fore_month, fore_year) %>%
+    summarise(qty_result = sum(Quantity_Start, na.rm = TRUE), .groups = "keep") %>% # nolint
+    mutate(comb_date = mdy(paste0(fore_month, "/01/", fore_year))) %>%
+    mutate(data_source = "Completed")
+
+file_path <- "C:\\Users\\astachowicz\\Documents\\Weldment Tracker\\R Coded\\" # nolint
+write.csv(forecast_weld_avg, paste0(file_path, "Forecast ",
+    format(Sys.Date(), "%b%d%y"), ".csv"))
+write.csv(completed_weld_avg, paste0(file_path, "Completed ",
+    format(Sys.Date(), "%b%d%y"), ".csv"))
+```
+```{r}
+#to create a legend
+#better way to do this????
+df_test <- bind_rows(forecast_weld_avg, completed_weld_avg)
+
+#use 'aggregate' to group by date and summarize
+viz_complete_forecast <- ggplot(data = df_test, aes(x = comb_date,
+        y = qty_result, col = data_source)) +
+    geom_line(size = 2) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        text = element_text(size = 14),
-        plot.margin = margin(15, 10, 5, 5, "pt")) +
+        text = element_text(size = 22),
+        plot.margin = margin(5, 5, 5, 15, "pt"),
+        aspect.ratio = 1) +
     scale_y_continuous(expand = expansion(mult = c(0, .1))) +
     scale_x_date() +
-    labs(title = "Weldment Forecast", x = "", y = "Order Quantity")
-windows(); viz_dispatch_released
+    labs(title = "Weldment Forecast", x = "Completion/Ship Date",
+        y = "Order Quantity", col = "Source")
+windows(); viz_complete_forecast
+ggsave(paste0(format(Sys.Date(), "%b%d%y"), " WELDMENTS avg month.png"))
 ```
