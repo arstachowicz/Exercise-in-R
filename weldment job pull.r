@@ -8,46 +8,28 @@ library(ggplot2)
 ```
 ```{r message=FALSE}
 #load raw csv file
-raw_weldment_list <- read_csv("C:\\Users\\astachowicz\\Documents\\Weldment Tracker\\R Coded\\Weldment Library\\weld number list.csv") # nolint
+#convert string values to recognizable part numbers
+adj_weldments <- read_csv("C:\\Users\\astachowicz\\Documents\\Weldment Tracker\\R Coded\\Weldment Library\\weld number list.csv") # nolint
+adj_weldments[2]
+adj_weldments <- gsub("/", "-", adj_weldments$Weldments)
+adj_weldments <- str_pad(adj_weldments, 10, side = "left", pad = "0") # nolint
 ```
 ```{r}
-#clean up data
-#some strings parsed as dates, remove data format (if present)
-#change string to recognizeable pattern/mask
-colnames(raw_weldment_list)[1] <- "Weldments"
-raw_weldment_list$Weldments <- gsub("/", "-", raw_weldment_list$Weldments)
-adj_weldments <- str_pad(raw_weldment_list$Weldments, 10,
-    side = "left", pad = "0")
-adj_weldments <- sort(adj_weldments)
-```
-```{r}
-#load data sets
+#load forecast data sets
 df1 <- file.choose()
 if (str_sub(df1, -4, -1) == ".csv") {
-    raw_df1 <- read_csv(df1)
+    raw_fore_df <- read_csv(df1)
 } else {
     print("Not a CSV file.")
-}
-df2 <- file.choose()
-if (str_sub(df2, -4, -1) == ".csv") {
-    raw_df2 <- read_csv(df2)
-} else {
-    print("Not a CSV file.")
-}
-if (df1 == df2) {
-    print("Same file selected twice.")
-} else {
-    raw_job_list <- bind_rows(raw_df1, raw_df2)
 }
 ```
 #clean up columns
 #remove spaces and hash in header
-colnames(raw_job_list) = gsub(" ", "_", colnames(raw_job_list))
-colnames(raw_job_list) = gsub("#", "", colnames(raw_job_list))
-
+colnames(raw_fore_df) = gsub(" ", "_", colnames(raw_fore_df))
+colnames(raw_fore_df) = gsub("#", "", colnames(raw_fore_df))
 ```{r}
 #Filtered to Weldments
-forecast_weld <- raw_job_list %>%
+forecast_weld <- raw_fore_df %>%
     select(Item_Name, Using_Assembly, Schedule_Ship_Date,
             Order_Type, Standard_Cost, Order_Quantity) %>%
     #convert currency to double to use sum(), convert date
@@ -120,7 +102,7 @@ df_test <- bind_rows(forecast_weld_avg, completed_weld_avg)
 #use 'aggregate' to group by date and summarize
 viz_complete_forecast <- ggplot(data = df_test, aes(x = comb_date,
         y = qty_result, col = data_source)) +
-    geom_line(size = 2) +
+    geom_line(linewidth = 2) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
         text = element_text(size = 22),
         plot.margin = margin(5, 5, 5, 15, "pt"),

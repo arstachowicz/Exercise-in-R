@@ -1,0 +1,88 @@
+```{r message=FALSE, warning=FALSE}
+#load libraries
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+
+#Environmental Variables
+Sys.setenv(TZ = "America/Chicago")
+```
+```{r message=FALSE}
+#load raw csv file
+file_locat <- "C:\\Users\\astachowicz\\Documents\\Research\\Connection between Humidity and Baths\\" # nolint
+raw_atmos_csv <- read_csv(paste0(file_locat, "tblATMOSPHERE.csv")) # nolint
+raw_sg_csv <- read_csv(paste0(file_locat, "tblSPECIFICGRAVITY.csv"))
+
+#prepare column heads
+colnames(raw_sg_csv) = gsub(" ", "_", colnames(raw_sg_csv))
+colnames(raw_sg_csv) = gsub("\\.", "", colnames(raw_sg_csv))
+colnames(raw_atmos_csv) = gsub(" ", "_", colnames(raw_atmos_csv))
+colnames(raw_atmos_csv) = gsub("\\.", "", colnames(raw_atmos_csv))
+
+#ready columns, correct line types
+#atmosphere, group by date, avg rel. humid
+atmos_csv <- raw_atmos_csv %>%
+    rename("Temp" = 5) %>%
+    select(-ID, -Time) %>%
+    mutate(Date = mdy(Date))
+atmos_csv$Rel_Humidity <- as.numeric(gsub("\\%", "", atmos_csv$Rel_Humidity))
+atmos_csv %>%
+    group_by(Date) %>%
+    summarise(Rel_Humidity = mean(Rel_Humidity))
+
+#specific gravity, average EP2500 across all lines
+sg_csv <- raw_sg_csv %>%
+    rename("Specific_Gravity" = 7) %>%
+    select(Date, Time, Chemical, Line, Specific_Gravity) %>%
+    mutate(Date = mdy(Date)) %>%
+    filter(Chemical == 2 & Date > min(atmos_csv$Date)) %>%
+    select(-Chemical) %>%
+    group_by(Date) %>%
+    summarise(Specific_Gravity = mean(Specific_Gravity))
+
+#row bind by date (LEFT JOIN)
+help(merge)
+sg_atmos_join <- merge(sg_csv, atmos_csv,
+    by.x = "Date",
+    by.y = "Date")
+head(sg_atmos_join)
+
+#Find necessary humidity range to keep best keep SG > 1.67
+req_hum_range <- sg_atmos_join %>%
+    filter(Specific_Gravity >= 1.67)
+nrow(req_hum_range)
+
+#remove outliers
+quartiles <- quantile(req_hum_range$Rel_Humidity,
+    probs = c(.25, .75),
+    na.rm = FALSE)
+req_humIQR <- IQR(req_hum_range$Rel_Humidity)
+lowerQ <- quartiles[1] - 1.5 * req_humIQR
+upperQ <- quartiles[2] + 1.5 * req_humIQR
+data_no_outlier <- req_hum_range %>%
+    subset(Rel_Humidity > lowerQ & Rel_Humidity < upperQ)
+
+#RANGE NEEDED (<42%)
+min_rel_hum <- min(data_no_outlier$Rel_Humidity)
+max_rel_hum <- max(data_no_outlier$Rel_Humidity)
+min_rel_hum 
+max_rel_hum
+
+#generate line graphs to show relationship
+viz_complete_forecast <- ggplot(data = sg_atmos_join, aes(x = Date,
+        y = Specific_Gravity, col = -Rel_Humidity)) +
+    geom_point() +
+    scale_y_continuous(limits = c(1.620, 1.70)) +
+    labs(title = "Effect of Humidity on EP Bath Water Concentration",
+        y = "Specific Gravity (g/mL)",
+        col = "Rel. Humidity (%)") +
+    theme(plot.title = element_text(size = 16, hjust = 0.5,
+            margin = margin(b = 10)),
+        legend.title = element_text(size = 10, hjust = 0.5),
+        plot.margin = margin(15, 10, 5, 5, "pt"),
+        axis.title.y = element_text(margin = margin(r = 10)),
+        axis.title.x = element_text(margin = margin(t = 10)))
+windows(); viz_complete_forecast
+ggsave(paste0(format(Sys.Date(), "%b%d%y"), " humidity specific grav.png"))
+```
