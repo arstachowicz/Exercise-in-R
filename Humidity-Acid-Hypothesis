@@ -42,11 +42,19 @@ sg_csv <- raw_sg_csv %>%
     summarise(Specific_Gravity = mean(Specific_Gravity))
 
 #row bind by date (LEFT JOIN)
-help(merge)
 sg_atmos_join <- merge(sg_csv, atmos_csv,
     by.x = "Date",
     by.y = "Date")
 head(sg_atmos_join)
+
+#organize by month
+monthly_sg_atmos <- sg_atmos_join %>%
+    group_by(month(Date)) %>%
+    summarise(Specific_Gravity = mean(Specific_Gravity),
+        Rel_Humidity = mean(Rel_Humidity)) %>%
+    rename("Date" = 1) %>%
+    mutate(mon = month.abb[Date]) %>%
+    arrange(Date)
 
 #Find necessary humidity range to keep best keep SG > 1.67
 req_hum_range <- sg_atmos_join %>%
@@ -56,33 +64,92 @@ nrow(req_hum_range)
 #remove outliers
 quartiles <- quantile(req_hum_range$Rel_Humidity,
     probs = c(.25, .75),
-    na.rm = FALSE)
+    na.rm = TRUE)
 req_humIQR <- IQR(req_hum_range$Rel_Humidity)
 lowerQ <- quartiles[1] - 1.5 * req_humIQR
 upperQ <- quartiles[2] + 1.5 * req_humIQR
 data_no_outlier <- req_hum_range %>%
     subset(Rel_Humidity > lowerQ & Rel_Humidity < upperQ)
 
-#RANGE NEEDED (<42%)
-min_rel_hum <- min(data_no_outlier$Rel_Humidity)
-max_rel_hum <- max(data_no_outlier$Rel_Humidity)
-min_rel_hum 
-max_rel_hum
+#find 99.7% confidence interval
+mu_outlierless <- mean(data_no_outlier$Rel_Humidity)
+upper2SD <- mu_outlierless + 3 * sd(data_no_outlier$Rel_Humidity, na.rm = TRUE)
+upper2SD
+
+#how often did the SG break 1.70 g/mL?
+bar_count <- req_hum_range %>%
+    filter(Specific_Gravity >= 1.70)
+nrow(bar_count)
 
 #generate line graphs to show relationship
-viz_complete_forecast <- ggplot(data = sg_atmos_join, aes(x = Date,
-        y = Specific_Gravity, col = -Rel_Humidity)) +
-    geom_point() +
-    scale_y_continuous(limits = c(1.620, 1.70)) +
+viz_graph <- ggplot(data = sg_atmos_join, aes(x = Date,
+        y = Specific_Gravity, col = Rel_Humidity)) +
+    geom_point(size = 3) +
+    scale_y_continuous(limits = c(1.610, 1.71), expand = c(0, 0)) +
     labs(title = "Effect of Humidity on EP Bath Water Concentration",
         y = "Specific Gravity (g/mL)",
-        col = "Rel. Humidity (%)") +
-    theme(plot.title = element_text(size = 16, hjust = 0.5,
-            margin = margin(b = 10)),
-        legend.title = element_text(size = 10, hjust = 0.5),
+        col = "Rel.\nHumidity\n(%)") +
+    scale_colour_gradient(low = "#184f18", high = "#4ee64e",
+        space = "Lab", guide = "colourbar",
+        aesthetics = "colour") +
+    theme(aspect.ratio = .85,
+        plot.title = element_text(size = 18, hjust = 0.5,
+            margin = margin(b = 10), face = "bold"),
+        legend.title = element_text(size = 14, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title = element_text(size = 14, face = "bold"),
         plot.margin = margin(15, 10, 5, 5, "pt"),
         axis.title.y = element_text(margin = margin(r = 10)),
         axis.title.x = element_text(margin = margin(t = 10)))
-windows(); viz_complete_forecast
-ggsave(paste0(format(Sys.Date(), "%b%d%y"), " humidity specific grav.png"))
+windows(); viz_graph
+ggsave(paste0(format(Sys.Date(), "%b%d%y"), " humidity time.png"))
+
+viz_vs_graph <- ggplot(data = sg_atmos_join, aes(x = Rel_Humidity,
+        y = Specific_Gravity, col = Rel_Humidity)) +
+    geom_point(size = 3, show.legend = FALSE) +
+    scale_colour_gradient(low = "#184f18", high = "#4ee64e",
+        space = "Lab", guide = "colourbar",
+        aesthetics = "colour") +
+    scale_y_continuous(limits = c(1.610, 1.71), expand = c(0, 0)) +
+    scale_x_continuous(expand = c(0.01, 0)) +
+    geom_smooth(method = "lm", show.legend = FALSE,
+        color = "#2b662b", linewidth = 1, alpha = 0.45) +
+    labs(title = "Effect of Humidity on EP Bath Water Concentration",
+        x = "Rel. Humidity (%)",
+        y = "Specific Gravity (g/mL)") +
+    theme(aspect.ratio = .8,
+        plot.title = element_text(size = 18, hjust = 0.5,
+            margin = margin(b = 10), face = "bold"),
+        axis.text = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title = element_text(size = 14, face = "bold"),
+        plot.margin = margin(15, 10, 5, 5, "pt"),
+        axis.title.y = element_text(margin = margin(r = 10)),
+        axis.title.x = element_text(margin = margin(t = 10)))
+windows(); viz_vs_graph
+ggsave(paste0(format(Sys.Date(), "%b%d%y"), " humidity specific grav vs.png"))
+
+bar_season_graph <- ggplot(data = monthly_sg_atmos,
+        aes(x = reorder(mon, Date),
+        y = Specific_Gravity,
+        fill = Rel_Humidity)) +
+    geom_bar(stat = "identity", show.legend = TRUE) +
+    labs(title = "Seasonal Effect on EP Bath Water Concentration",
+        x = "Month",
+        y = "Specific Gravity (g/mL)",
+        fill = "Rel.\nHumidity\n(%)") +
+    coord_cartesian(ylim = c(1.6, 1.71)) +
+    theme(aspect.ratio = .8,
+        plot.title = element_text(size = 18, hjust = 0.5,
+            margin = margin(b = 10), face = "bold"),
+        axis.text = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.text.x = element_text(size = 12),
+        axis.title = element_text(size = 14, face = "bold"),
+        plot.margin = margin(15, 10, 5, 5, "pt"),
+        axis.title.y = element_text(margin = margin(r = 10)),
+        axis.title.x = element_text(margin = margin(t = 10)))
+windows(); bar_season_graph
+ggsave(paste0(format(Sys.Date(), "%b%d%y"), " seasonal bargraph.png"))
 ```
