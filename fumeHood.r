@@ -46,15 +46,37 @@ grouped_mont <- fume_csv_no_outliers %>%
     summarise(avg_Velocity = mean(Velocity, na.rm = FALSE)) %>%
     mutate(abbr_month = month.abb[num_month])
 
+#atmosphere info
+file_locat <- "C:\\Users\\astachowicz\\Documents\\Research\\Connection between Humidity and Baths\\" # nolint
+raw_atmos_csv <- read_csv(paste0(file_locat, "tblATMOSPHERE.csv")) # nolint
+colnames(raw_atmos_csv) = gsub(" ", "_", colnames(raw_atmos_csv))
+colnames(raw_atmos_csv) = gsub("\\.", "", colnames(raw_atmos_csv))
+atmos_csv <- raw_atmos_csv %>%
+    rename("Temp" = 5) %>%
+    select(-ID, -Time, -Temp) %>%
+    mutate(Date = mdy(Date)) %>%
+    mutate(monDate = month(Date)) %>%
+    mutate(Rel_Humidity = as.numeric(gsub("\\%", "", Rel_Humidity))) %>%
+    group_by(monDate) %>%
+    summarise(Rel_Humidity = mean(Rel_Humidity))
+head(atmos_csv)
 head(grouped_mont)
+nrow(atmos_csv)
+nrow(grouped_mont)
+
+atmos_season <- merge(grouped_mont, atmos_csv, by.x = "num_month",
+        by.y = "monDate")
+
+head(atmos_season)
 #generate line graphs to show relationship
-bar_season_graph <- ggplot(data = grouped_mont,
+bar_season_graph <- ggplot(data = atmos_season,
         aes(x = reorder(abbr_month, num_month),
-        y = avg_Velocity)) +
+        y = avg_Velocity, fill = Rel_Humidity)) +
     geom_bar(stat = "identity", show.legend = TRUE) +
     labs(title = "Seasonal Effect on Ventilation",
         x = "Month",
-        y = "Avg. Velocity (ft/min)") +
+        y = "Avg. Velocity (ft/min)",
+        fill = "Rel.\nHumidity\n(%)") +
     coord_cartesian(ylim = c(100, 140)) +
     theme(aspect.ratio = .8,
         plot.title = element_text(size = 18, hjust = 0.5,
